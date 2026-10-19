@@ -51,11 +51,22 @@ pi -e "C:/Users/xieweiyang/pi-workbuddy-cn/extensions/workbuddy.ts"
 
 ## 设置
 
-- **侧栏卡片**：账号、各积分包余量和当前模型列表。
-- **`/workbuddy`** 弹出菜单：刷新积分与账号 / 列出全部模型（含付费）/ 只列出免费模型 / 断开登录。
-  也接受参数：`/workbuddy free`、`/workbuddy all`、`/workbuddy logout`。
+不往侧栏画面板，所有信息都在命令里给：
 
-范围记在 `~/.pi/agent/.workbuddy-settings.json`，切换后服务商立即重新注册模型，不用重启。
+- **`/workbuddy`** 弹出菜单：
+
+  ```
+  刷新积分与账号
+  列出全部模型（含付费）
+  只列出免费模型
+  断开登录
+  ```
+
+- **`/workbuddy` 加参数**：`/workbuddy free` · `/workbuddy all` · `/workbuddy logout`
+
+结果以一行动态提示回显，例如 `WorkBuddy 积分 600（CodeBuddy个人体验版 500 / 500，…）`。
+
+模型范围记在 `~/.pi/agent/.workbuddy-settings.json`，切换后服务商立即重新注册模型，不用重启。
 
 ## 环境变量
 
@@ -71,7 +82,8 @@ pi -e "C:/Users/xieweiyang/pi-workbuddy-cn/extensions/workbuddy.ts"
 - 产品配置路径 `~/.workbuddy/cache/acc-product-config-v3.json`。
 - 不再读桌面端的登录文件：中国版那边存的是加密令牌（`$wbEncrypted` 信封，密钥由原生模块保管），脚本解不开。要登录就重新走一次浏览器授权。
 - 免费模型名单按中国版配置算，不是国际版那三款。
-- 其余（请求规整、推理档映射、积分解析、侧栏卡片、`/workbuddy` 菜单）沿用原版。
+- 去掉了侧栏账号卡片和启动时的积分请求：只在手动执行 `/workbuddy` 时才联网查积分。
+- 其余（请求规整、推理档映射、积分查询、`/workbuddy` 菜单）沿用原版。
 
 ## 自检
 

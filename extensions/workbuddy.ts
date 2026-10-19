@@ -549,51 +549,6 @@ function fmtStamp(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
-function fmtExpiry(ms: number): string {
-  if (ms <= 0) return "未知";
-  const d = new Date(ms);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-}
-
-function bar(remain: number, size: number, width = 28): string {
-  if (size <= 0) return "";
-  const n = Math.round(Math.min(1, Math.max(0, remain / size)) * width);
-  return `${"█".repeat(n)}${"░".repeat(width - n)}`;
-}
-
-export function widgetLines(input: {
-  cred?: Cred;
-  credits?: { total: number; packs: Pack[] };
-  error?: string;
-  scope?: Scope;
-  models?: { name: string }[];
-}): string[] {
-  const scope = input.scope ?? "free";
-  const lines = [`WorkBuddy AI · 中国版 · ${scope === "all" ? "全部模型" : "仅免费模型"}`];
-  if (!input.cred) {
-    lines.push("未登录。运行 /login 选择 WorkBuddy AI，或 /workbuddy 查看状态");
-    if (input.error) lines.push(input.error);
-    lines.push("设置  /workbuddy");
-    return lines;
-  }
-  lines.push(`账号  已登录  ${input.cred.nickname || input.cred.uid}`);
-  lines.push(`令牌  ${fmtExpiry(input.cred.expiresAtMs)} 过期（自动续期）`);
-  if (input.credits) {
-    lines.push(`积分  合计 ${input.credits.total}`);
-    for (const pack of input.credits.packs) {
-      const right = pack.size > 0 ? `${pack.remain} / ${pack.size}` : String(pack.remain);
-      lines.push(`  ${pack.name}  剩余 ${right}`);
-      const drawn = bar(pack.remain, pack.size);
-      if (drawn) lines.push(`  ${drawn}`);
-    }
-  } else if (input.error) {
-    lines.push(`积分  ${input.error}`);
-  }
-  const names = (input.models ?? []).map((model) => model.name).join("  |  ") || "（无模型）";
-  lines.push(`模型  ${names}`);
-  lines.push("设置  /workbuddy");
-  return lines;
-}
 
 async function fetchCredits(cred: Cred): Promise<{ total: number; packs: Pack[] }> {
   const now = new Date();
@@ -627,52 +582,20 @@ async function fetchCredits(cred: Cred): Promise<{ total: number; packs: Pack[] 
   return parseCredits(envelope);
 }
 
-type Ui = {
-  setWidget(key: string, content: string[] | undefined): void;
-  setStatus(key: string, text: string | undefined): void;
-  notify(message: string, type?: "info" | "warning" | "error"): void;
-};
-
-/** The card belongs to sessions actually running a WorkBuddy model. */
-export function showsWorkBuddyCard(provider: unknown, force = false): boolean {
-  return force || provider === PROVIDER;
-}
-
-type PaintCtx = { ui: Ui; model?: { provider?: string } };
-
-/** Paints the card and returns the lines drawn, or undefined when hidden. */
-async function paint(
-  ctx: PaintCtx,
-  notify = false,
-  extra: { scope: Scope; models: { name: string }[] } = { scope: "free", models: [] },
-  force = false,
-): Promise<string[] | undefined> {
-  const { ui } = ctx;
-  if (!showsWorkBuddyCard(ctx.model?.provider, force)) {
-    ui.setWidget("workbuddy", undefined);
-    ui.setStatus("workbuddy", undefined);
-    return undefined;
-  }
-  let cred: Cred | undefined;
-  let credits: { total: number; packs: Pack[] } | undefined;
-  let error: string | undefined;
+/** 查一次账号和积分，返回一行文字，用于命令回显。不往侧栏画任何东西。 */
+export async function accountSummary(): Promise<string> {
   try {
-    cred = await resolveCred();
-    credits = await fetchCredits(cred);
+    const cred = await resolveCred();
+    const credits = await fetchCredits(cred);
+    const packs = credits.packs
+      .map((pack) => `${pack.name} ${pack.remain}${pack.size > 0 ? ` / ${pack.size}` : ""}`)
+      .join("，");
+    return `WorkBuddy 积分 ${credits.total}${packs === "" ? "" : `（${packs}）`}`;
   } catch (caught) {
-    cred = await current();
-    error = caught instanceof Error ? caught.message : String(caught);
+    const reason = caught instanceof Error ? caught.message : String(caught);
+    const cred = await current();
+    return cred ? `WorkBuddy 已登录，积分查不到：${reason}` : `WorkBuddy 未登录：${reason}`;
   }
-  const lines = widgetLines({ cred, credits, error, ...extra });
-  ui.setWidget("workbuddy", lines);
-  ui.setStatus("workbuddy", credits ? `积分 ${credits.total}` : cred ? "WorkBuddy 已登录" : "WorkBuddy 未登录");
-  if (notify) {
-    ui.notify(
-      error ? `WorkBuddy：${error}` : `WorkBuddy 已刷新 · 积分 ${credits?.total ?? "?"}`,
-      error ? "warning" : "info",
-    );
-  }
-  return lines;
 }
 
 const PLUGIN_AUTH_HEADERS = {
@@ -800,9 +723,6 @@ export default async function (pi: ExtensionAPI) {
   let scope = loadSettings().scope;
   let models = buildPiModels(loadProductConfig(), scope);
   let ids = new Set(models.map((model) => model.id));
-  /** Last painted card lines for this session, reused on model switch. */
-  let card: string[] | undefined;
-  const extra = () => ({ scope, models });
   const oauth = {
     name: "WorkBuddy AI",
     login: loginWorkBuddy,
@@ -846,26 +766,6 @@ export default async function (pi: ExtensionAPI) {
     return prepareChatPayload(payload);
   });
 
-  pi.on("session_start", (_event, ctx) => {
-    // Never block session startup on the optional account/credits card.
-    void paint(ctx, false, extra())
-      .then((lines) => { card = lines; })
-      .catch(() => undefined);
-  });
-
-  // setModel awaits this handler, so it must never block on network I/O:
-  // redraw from the cached card and refresh in the background.
-  pi.on("model_select", (_event, ctx) => {
-    if (!showsWorkBuddyCard(ctx.model?.provider)) {
-      card = undefined;
-      ctx.ui.setWidget("workbuddy", undefined);
-      ctx.ui.setStatus("workbuddy", undefined);
-      return;
-    }
-    if (card) ctx.ui.setWidget("workbuddy", card);
-    void paint(ctx, false, extra()).then((lines) => { card = lines; }).catch(() => undefined);
-  });
-
   pi.registerCommand("workbuddy", {
     description: "WorkBuddy 设置：刷新积分、免费/全部模型、断开登录",
     handler: async (args, ctx) => {
@@ -873,12 +773,15 @@ export default async function (pi: ExtensionAPI) {
       if (cmd === "free" || cmd === "all") {
         await saveSettings(cmd);
         apply(cmd);
-        await paint(ctx, true, extra(), true);
+        ctx.ui.notify(
+          cmd === "all" ? "WorkBuddy：已列出全部模型（含付费）" : "WorkBuddy：只列出免费模型",
+          "info",
+        );
         return;
       }
       if (cmd === "logout" || cmd === "disconnect") {
         await unlink(ownPath()).catch(() => undefined);
-        await paint(ctx, true, extra(), true);
+        ctx.ui.notify("WorkBuddy：已断开登录", "info");
         return;
       }
       const pick = await ctx.ui.select("WorkBuddy 设置", [
@@ -890,13 +793,17 @@ export default async function (pi: ExtensionAPI) {
       if (pick.startsWith("列出全部")) {
         await saveSettings("all");
         apply("all");
+        ctx.ui.notify("WorkBuddy：已列出全部模型（含付费）", "info");
       } else if (pick.startsWith("只列出")) {
         await saveSettings("free");
         apply("free");
+        ctx.ui.notify("WorkBuddy：只列出免费模型", "info");
       } else if (pick === "断开登录") {
         await unlink(ownPath()).catch(() => undefined);
+        ctx.ui.notify("WorkBuddy：已断开登录", "info");
+      } else {
+        ctx.ui.notify(await accountSummary(), "info");
       }
-      await paint(ctx, true, extra(), true);
     },
   });
 }
@@ -914,10 +821,6 @@ if (process.argv.includes("--self-check")) {
   const kept = prepareChatPayload({ messages: [], reasoning_effort: "max" });
   if (kept.reasoning_effort !== "max") throw new Error("explicit effort preserved");
   if (LOW_HIGH.low !== "low" || HIGH_ONLY.low !== null || HIGH_ONLY.high !== "high") throw new Error("effort map");
-  if (!showsWorkBuddyCard("workbuddy")) throw new Error("card: own provider shown");
-  if (showsWorkBuddyCard("GROKCPA")) throw new Error("card: foreign provider hidden");
-  if (showsWorkBuddyCard(undefined) || showsWorkBuddyCard(null) || showsWorkBuddyCard(42)) throw new Error("card: unknown provider hidden");
-  if (!showsWorkBuddyCard("GROKCPA", true)) throw new Error("card: explicit command overrides");
   const ours = new Set(["hy3", "deepseek-v4.1-flash"]);
   if (!isWorkBuddyModel("hy3", ours)) throw new Error("scope: own model accepted");
   if (isWorkBuddyModel("grok-4.6", ours)) throw new Error("scope: foreign model must be rejected");
@@ -982,19 +885,6 @@ if (process.argv.includes("--self-check")) {
     },
   });
   if (credits.total !== 349 || credits.packs.length !== 2) throw new Error("credits");
-  const lines = widgetLines({
-    cred: {
-      accessToken: "a",
-      refreshToken: "r",
-      expiresAtMs: Date.UTC(2027, 8, 12, 1, 30, 0),
-      domain: "www.workbuddy.cn",
-      uid: "u",
-      nickname: "user@example.com",
-    },
-    credits,
-  });
-  if (!lines.some((line) => line.includes("user@example.com"))) throw new Error("account");
-  if (!lines.some((line) => line.includes("合计 349"))) throw new Error("total");
   const token = `x.${Buffer.from(JSON.stringify({ email: "a@b.c", sub: "u9" })).toString("base64url")}.y`;
   const fromTok = credFromPluginToken(
     { refreshToken: "r", expiresIn: 10, domain: "www.workbuddy.cn", enterpriseId: "e1" },
