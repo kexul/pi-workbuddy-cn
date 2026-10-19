@@ -1,0 +1,22 @@
+{
+  "name": "pi-workbuddy-cn",
+  "version": "1.0.0",
+  "description": "WorkBuddy 中国版（workbuddy.cn）provider for pi — 浏览器授权登录、积分余量、按模型列推理档。",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "workbuddy",
+    "provider"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
