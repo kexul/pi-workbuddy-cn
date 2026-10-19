@@ -4,13 +4,21 @@ WorkBuddy 中国版（workbuddy.cn）的 pi 模型服务商。在 pi 里直接�
 
 改自 [icekale/pi-workbuddy-connect](https://github.com/icekale/pi-workbuddy-connect)（原版对接国际版 workbuddy.ai）。
 
+仓库：[kexul/pi-workbuddy-cn](https://github.com/kexul/pi-workbuddy-cn)
+
 ## 安装
+
+```bash
+pi install git:github.com/kexul/pi-workbuddy-cn
+```
+
+或者用本地副本（改代码后立即生效，适合自己调）：
 
 ```bash
 pi install "C:/Users/xieweiyang/pi-workbuddy-cn"
 ```
 
-或临时加载：
+临时加载一次：
 
 ```bash
 pi -e "C:/Users/xieweiyang/pi-workbuddy-cn/extensions/workbuddy.ts"
